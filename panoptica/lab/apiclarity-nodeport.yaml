@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: apiclarity-nodeport
+  labels:
+    app: apiclarity-nodeport
+  namespace: portshift
+spec:
+  type: NodePort
+  ports:
+  - port: 8080
+    targetPort: 8080
+    nodePort: 30002
+  selector:
+    app: apiclarity

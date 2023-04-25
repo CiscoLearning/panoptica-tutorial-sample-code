@@ -1,0 +1,93 @@
+apiVersion: v1
+data:
+  user-traffic-load.py: "from locust import User, SequentialTaskSet, task, between\nimport
+    random\nimport requests\nfrom requests.auth import HTTPBasicAuth\nimport json\n\nclass
+    OrderedUserWithOrders(User):\n  wait_time = between(1,2)\n  fixed_count = 1\n
+    \ \n  @task\n  class SequencedTasks(SequentialTaskSet):\n\n    wait_time = between(1,2)\n\n
+    \   def __init__(self, parent):\n        super().__init__(parent)\n        sockshopurl
+    = (self.user.host)\n        sockShopClient = SockShopClient(sockshopurl)\n        self.sockShopClient
+    = sockShopClient\n        self.sockShopUser = {}\n        self.sockShopCart =
+    {}\n        self.sockShopItem = {}\n        self.sockShopCatalogue = {}\n\n    @task\n
+    \   def on_start(self):\n        sockShopClient = self.sockShopClient\n        #
+    register\n        # TODO generate random names\n        self.sockShopUser = {\n
+    \                   \"username\": f\"JohnDoe\",\n                    \"password\":
+    \"password\",\n                    \"email\": \"email@email.com\",\n                    \"firstName\":
+    \"John\",\n                    \"lastName\": \"Doe\"\n                }\n        sockShopClient.register(username=self.sockShopUser['username'],
+    password=self.sockShopUser['password'], email=self.sockShopUser['email'],\n                        firstName=self.sockShopUser['firstName'],
+    lastName=self.sockShopUser['lastName'])\n        sockShopClient.add_address(street=\"Via\",
+    postcode=\"20100\", city=\"Milan\", country=\"Italy\", number=\"0\")\n        sockShopClient.add_credit_card(longnum=\"12344566788\",
+    expires=\"01/22\", ccv=\"123\")\n        sockShopClient.login(self.sockShopUser['username'],
+    self.sockShopUser['password'])\n    \n    @task\n    def browse(self):\n        sockShopClient
+    = self.sockShopClient\n        tags = sockShopClient.get_tags()\n        _tags
+    = random.choices(tags, k=random.randint(0, len(tags)))\n        self.sockShopCatalogue
+    = sockShopClient.get_catalogue(tags=_tags)\n        if len(self.sockShopCatalogue)
+    == 0:\n            return\n        self.sockShopItem = random.choice(self.sockShopCatalogue)\n
+    \       sockShopClient.browse_to_item(self.sockShopItem['id'])\n\n    @task\n
+    \   def get_cart(self):\n        self.sockShopCart = self.sockShopClient.get_cart()\n
+    \   \n    @task\n    def add_to_cart(self):\n        if len(self.sockShopCatalogue)
+    == 0:\n            return\n        self.sockShopItem = random.choice(self.sockShopCatalogue)\n
+    \       self.sockShopClient.add_to_cart(self.sockShopItem['id'])\n    \n    @task\n
+    \   def checkout(self):\n        if not self.sockShopCart:\n            return\n
+    \       self.sockShopClient.checkout()\n\nclass SockShopClient(object):\n    def
+    __init__(self, url):\n        self._url = url\n        self._session = None\n\n
+    \   def _build_url(self, url):\n        return self._url + url\n\n    def login(self,
+    username, password):\n        self._s = requests.Session()\n        self._s.headers.update({'content-type':
+    'application/json'})\n        self._s.get(self._build_url('/login'), auth=HTTPBasicAuth(username,
+    password))\n        print(self._s.cookies)\n\n    def logout(self):\n        self._s
+    = None\n\n    def register(self, username, password, email, firstName, lastName):\n
+    \       self._s = requests.Session()\n        self._s.headers.update({'content-type':
+    'application/json'})\n\n        data = {\n            'username': username,\n
+    \           'password': password,\n            'email': email,\n            'firstName':
+    firstName,\n            'lastName': lastName\n        }\n        return self._s.post(self._build_url('/register'),
+    data=json.dumps(data))\n\n    def get_tags(self):\n        # dynamic tag pulling
+    removed because of detected issues in /tags - duplicated elements\n        # res
+    = requests.get(self._build_url('/tags'))\n        # if res.status_code != 200
+    or res.json()['err']:\n        #     raise Exception(f\"Failed to get tags: {res}
+    {res.json().get('err')}\")\n        # return res.json()['tags']\n        res =
+    '{\"tags\":[\"brown\",\"geek\",\"formal\",\"blue\",\"skin\",\"red\",\"action\",\"sport\",\"black\",\"magic\",\"green\"],\"err\":null}'\n
+    \       return json.loads(res)['tags']\n        \n\n    def get_catalogue(self,
+    tags=[]):\n        params = {\n            'tags': ','.join(tags),\n            'page':
+    1,\n            'size': 100\n        }\n        res = requests.get(self._build_url('/catalogue'),
+    params=params)\n        if res.status_code != 200:\n            raise Exception(f\"Failed
+    to get catalogue: {res} {res.json()}\")\n\n        return res.json()\n\n    def
+    get_cart(self):\n        res = self._s.get(self._build_url('/cart'))\n        if
+    res.status_code != 200:\n            raise Exception(f\"failed to get cart: {res}
+    {res.json()}\")\n\n        return res.json()\n\n    def empty_cart(self, cart=None):\n
+    \       if not cart:\n            cart = self.get_cart()\n        for item in
+    cart:\n            self.remove_from_cart(item['itemId'])\n\n    def add_to_cart(self,
+    item):\n        data = {\n            'id': item\n        }\n\n        res = self._s.post(self._build_url('/cart'),
+    data=json.dumps(data))\n        if res.status_code != 201:\n            raise
+    Exception(f\"Failed to add {item} to cart: {res} {res.json()}\")\n        return
+    res\n\n    def remove_from_cart(self, item):\n        res = self._s.delete(self._build_url(f'/cart/{item}'))\n
+    \       if res.status_code != 202:\n            raise Exception(f\"Failed to remove
+    {item} from cart: {res} {res.json()}\")\n\n        return res\n\n    def checkout(self):\n
+    \       res = self._s.post(self._build_url('/orders'))\n        return\n        if
+    res.status_code != 201:\n            raise Exception(f\"Failed to checkout: {res}
+    {res.json()}\")\n\n    def add_address(self, street, number, city, postcode, country):\n
+    \       data = {\n            \"street\": street,\n            \"number\": number,\n
+    \           \"city\": city,\n            \"postcode\": postcode,\n            \"country\":
+    country\n        }\n        res = self._s.post(self._build_url('/addresses'),
+    data=json.dumps(data))\n        if res.status_code != 200:\n            raise
+    Exception(f\"Failed to add address: {res} {res.json()}\")\n        return res.json()\n\n
+    \   def get_address(self):\n        res = self._s.get(self._build_url('/address'))\n
+    \       if res.status_code != 200:\n            raise Exception(f\"Failed to get
+    address: {res} {res.json()}\")\n        if res.json().get('status_code') == 500:\n
+    \           return {}\n        return res.json()\n\n    def get_card(self):\n
+    \       res = self._s.get(self._build_url('/card'))\n        if res.status_code
+    != 200:\n            raise Exception(f\"Failed to get card: {res} {res.json()}\")\n
+    \       if res.json().get('status_code') == 500:\n            return {}\n        return
+    res.json()\n\n    def get_orders(self):\n        res = self._s.get(self._build_url('/orders'))\n
+    \       if res.status_code != 201:\n            raise Exception(f\"Failed to get
+    orders: {res} {res.json()}\")\n        return res.json()\n\n    def add_credit_card(self,
+    longnum, expires, ccv):\n        data = {\n            \"longNum\": longnum,\n
+    \           \"expires\": expires,\n            \"ccv\": ccv,\n        }\n        res
+    = self._s.post(self._build_url('/cards'), data=json.dumps(data))\n        if res.status_code
+    != 200:\n            raise Exception(f\"Failed to add credit card: {res} {res.json()}\")\n
+    \       return res.json()\n\n    def browse_to_item(self, id):\n        res =
+    self._s.get(self._build_url(f'/detail.html?id={id}'))\n        if res.status_code
+    not in [304, 200]:\n            raise Exception(f\"failed to browse to item {id}:
+    {res} \")\n"
+kind: ConfigMap
+metadata:
+  creationTimestamp: null
+  name: user-traffic-load-configmap

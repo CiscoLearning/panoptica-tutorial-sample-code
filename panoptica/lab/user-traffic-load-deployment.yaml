@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: user-traffic-load-v1
+  labels:
+    app: user-traffic-load
+    version: v1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: user-traffic-load
+      version: v1
+  template:
+    metadata:
+      labels:
+        app: user-traffic-load
+        version: v1
+      annotations:
+        sidecar.istio.io/inject: "false"
+    spec:
+      volumes:
+      - name: config-volume
+        configMap:
+          name: user-traffic-load-configmap
+          defaultMode: 0755
+      containers:
+      - name: user-traffic-load
+        image: locustio/locust
+        volumeMounts:
+        - name: config-volume
+          mountPath: /sock-shop/user-traffic-load.py
+          subPath: user-traffic-load.py
+        command:
+         - /bin/bash
+         - -c
+         - "locust -f /sock-shop/user-traffic-load.py OrderedUserWithOrders --headless -u 2 -r 1 --host http://front-end:80"
